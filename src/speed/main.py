@@ -355,10 +355,10 @@ def main():
     app.setPalette(dark_palette)
     
     window = DigitDisplayGUI()
-    window.setScreen(app.screens()[1])  # Set to second monitor if available
-    screen = window.screen()
+    # window.setScreen(app.screens()[1])  # Set to second monitor if available
+    # screen = window.screen()
 
-    window.move(screen.geometry().topLeft())
+    # window.move(screen.geometry().topLeft())
     window.showFullScreen()
     print("🎯 GUI Application started!")
     
