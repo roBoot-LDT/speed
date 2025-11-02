@@ -5,11 +5,11 @@ import time
 url = "http://localhost:65500/api/data"
 speed = 5
 while True:
-    data = {"digits": [1, speed]}
-    response = requests.post(url, json=data)
-    speed += 5
-
-    # data = {"digits": [2, speed]}
+    # data = {"digits": [1, speed]}
     # response = requests.post(url, json=data)
     # speed += 5
+
+    data = {"digits": [2, speed]}
+    response = requests.post(url, json=data)
+    speed += 5
     time.sleep(1)
