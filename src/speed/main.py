@@ -19,6 +19,8 @@ class DigitDisplayGUI(QMainWindow):
         self.signals = DigitSignals()
         self.current_digits_left = [0, 0, 0]
         self.current_digits_right = [0, 0, 0]
+        self.paused = {'1': False, '2': False}
+        self.elapsed_acc = {'1': 0.0, '2': 0.0}
         self.prev_rotations = {'1': 0, '2': 0}  # Track for both columns
         self.total_path = {'1': 0, '2': 0}  # Track total path for each column
         self.prev_time = {'1': time.time(), '2': time.time()}
@@ -134,8 +136,8 @@ class DigitDisplayGUI(QMainWindow):
             # Calculate speed in km/h
             speed = (path_increment_km / time_diff) * 3600.0 if time_diff > 0 else 0.00
         
-        # Update total path in km, keep accuracy to 2 decimal places
-        if self.active_timers[column]:
+        # Update total path in km only if timer is active and not paused
+        if self.active_timers[column] and not self.paused[column]:
             self.total_path[column] = round(self.total_path[column] + path_increment_km, 3)
             self.total_path[column] = round(self.total_path[column], 3)  # Keep as float with 3 decimal places
         
@@ -148,27 +150,43 @@ class DigitDisplayGUI(QMainWindow):
         current_time = time.time()
         
         for column in ['1', '2']:
-            if self.active_timers[column] and self.start_times[column]:
-                elapsed = int(current_time - self.start_times[column])
-                
+            # Only update display if timer was ever started for this column
+            if self.active_timers[column]:
+                # Determine elapsed without advancing when paused
+                if self.paused[column]:
+                    elapsed = int(self.elapsed_acc[column])
+                else:
+                    # running: accumulated + current interval
+                    if self.start_times[column] is not None:
+                        elapsed = int(self.elapsed_acc[column] + (current_time - self.start_times[column]))
+                    else:
+                        elapsed = int(self.elapsed_acc[column])
+
                 # Use last calculated speed for this column
                 speed = self.current_speed[column]
-                # Reset only this column if its speed is 0
+
+                # If speed is zero, start/keep a zero-timer; pause only after >2s
                 if speed == 0:
                     if self.zero_since[column] is None:
                         self.zero_since[column] = current_time
-                    # reset only when zero persisted longer than 2 seconds
                     if (current_time - self.zero_since[column]) > 2.0:
-                        elapsed = 0
-                        self.active_timers[column] = False
-                        self.start_times[column] = None
-                        self.total_path[column] = 0  # Reset path when timer resets
-                        # keep zero_since as timestamp (or clear) -- clear to allow re-trigger later
-                        self.zero_since[column] = None
+                        # pause the timer (lock it), preserve elapsed_acc
+                        if not self.paused[column]:
+                            # accumulate current running interval before pausing
+                            if self.start_times[column] is not None:
+                                self.elapsed_acc[column] += (current_time - self.start_times[column])
+                                self.start_times[column] = None
+                            self.paused[column] = True
+                        # elapsed remains the accumulated value
+                        elapsed = int(self.elapsed_acc[column])
                 else:
-                    # speed > 0: clear any zero timer
+                    # speed > 0: clear zero timer and resume if paused
                     self.zero_since[column] = None
-                
+                    if self.paused[column]:
+                        # resume: mark new start time, do not reset elapsed_acc
+                        self.start_times[column] = current_time
+                        self.paused[column] = False
+
                 # Format time as HH:MM:SS
                 time_str = self.format_time(elapsed)
                 
@@ -177,8 +195,8 @@ class DigitDisplayGUI(QMainWindow):
                 if len(labels) > 1:
                     labels[1].setText(time_str)
                     labels[2].setText(f"{self.total_path[column]:.2f}")
-            elif not self.active_timers[column]:
-                # Show 00:00:00 when timer is not active
+            else:
+                # Timer was never started: show zeros
                 labels = self.left_labels if column == '1' else self.right_labels
                 if len(labels) > 1:
                     labels[1].setText("00:00:00")
@@ -205,8 +223,19 @@ class DigitDisplayGUI(QMainWindow):
             # store last computed speed so update_timers can use it
             self.current_speed[column] = speed
 
+            # if speed > 0 ensure timer is started or resumed
             if speed > 0:
                self.zero_since[column] = None
+               if not self.active_timers[column]:
+                   # start new timer
+                   self.start_times[column] = time.time()
+                   self.elapsed_acc[column] = 0.0
+                   self.paused[column] = False
+                   self.active_timers[column] = True
+               elif self.paused[column]:
+                   # resume paused timer
+                   self.start_times[column] = time.time()
+                   self.paused[column] = False
 
             # Update the appropriate column
             labels = self.left_labels if column == '1' else self.right_labels
@@ -214,12 +243,6 @@ class DigitDisplayGUI(QMainWindow):
             # Update speed (first digit)
             if labels:
                 labels[0].setText(f"{speed}")
-            
-            # Start/restart timer if speed changed
-            if speed > 0:
-                if not self.active_timers[column]:
-                    self.start_times[column] = time.time()
-                    self.active_timers[column] = True
             
             # Update internal tracking
             self.prev_rotations[column] = rotations
