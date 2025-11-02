@@ -48,73 +48,68 @@ class DigitDisplayGUI(QMainWindow):
         # Prefer using QPixmap + palette to set a background image (more reliable than stylesheet here)
         pix = QPixmap(bg_path)
         if not pix.isNull():
-            # Scale to exactly match window size
-            scaled_pix = pix.scaled(self.width(), self.height(), 
-                                  Qt.AspectRatioMode.IgnoreAspectRatio,  # Changed to IgnoreAspectRatio
-                                  Qt.TransformationMode.SmoothTransformation)
-            palette = central_widget.palette()
-            palette.setBrush(QPalette.Window, QBrush(scaled_pix))
-            central_widget.setAutoFillBackground(True)
-            central_widget.setPalette(palette)
+            # Create a proper scaled background that fills the screen exactly once
+            pix = pix.scaled(self.width(), self.height(), 
+                                Qt.AspectRatioMode.IgnoreAspectRatio,  
+                                Qt.TransformationMode.SmoothTransformation)
+            
+            # Set background as a stylesheet instead of palette
+            central_widget.setStyleSheet(f"""
+                QWidget#central {{
+                    background-image: url({bg_path});
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    background-size: cover;
+                }}
+            """)
             print(f"✅ Background image '{bg_path}' loaded successfully.")
         else:
             print(f"⚠️ Warning: Background image '{bg_path}' not found or failed to load.")
 
 
-        # Layout: two columns (left and right) each with 3 digits
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(40, 40, 40, 10)
-        main_layout.setSpacing(0)
-
-        col_style = """
+        # Style for labels
+        label_style = """
             QLabel {
                 color: #ffffff;
                 font-weight: bold;
             }
         """
 
-        # Left column
-        left_container = QWidget()
-        left_layout = QVBoxLayout(left_container)
-        left_layout.setSpacing(4)
-        left_layout.setAlignment(Qt.AlignBottom)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
-
+        # Create labels with absolute positioning
         self.left_labels = []
-        for i in range(3):
-            lbl = QLabel("0")
-            # lbl.setAlignment(Qt.AlignCenter)
-            lbl.setFont(QFont("Montserrat", 75))
-            lbl.setStyleSheet(col_style)
-            left_layout.addWidget(lbl)
+        self.right_labels = []
+        
+        # Coordinates for left column (x, y positions)
+        left_positions = [
+            (620, 705),  # First digit (speed)
+            (170, 125),  # Second digit (timer)
+            (100, 705)   # Third digit (path)
+        ]
+        
+        # Coordinates for right column
+        right_positions = [
+            (1075, 705),  # First digit (speed)
+            (1050, 125),  # Second digit (timer)
+            (1475, 705)   # Third digit (path)
+        ]
+
+        # Create and position left labels
+        for _, pos in enumerate(left_positions):
+            lbl = QLabel("0", central_widget)
+            lbl.setFont(QFont("Montserrat", 150))
+            lbl.setStyleSheet(label_style)
+            lbl.setGeometry(pos[0], pos[1], 700, 125)  # x, y, width, height
             self.left_labels.append(lbl)
 
-        # Spacer between columns
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        # Right column
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
-        right_layout.setSpacing(4)
-        right_layout.setAlignment(Qt.AlignBottom)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.right_labels = []
-        for i in range(3):
-            lbl = QLabel("0")
-            lbl.setFont(QFont("Montserrat", 75))
-            lbl.setStyleSheet(col_style)
-            right_layout.addWidget(lbl)
+        # Create and position right labels
+        for _, pos in enumerate(right_positions):
+            lbl = QLabel("0", central_widget)
+            lbl.setFont(QFont("Montserrat", 150))
+            lbl.setStyleSheet(label_style)
+            lbl.setGeometry(pos[0], pos[1], 700, 125)  # x, y, width, height
             self.right_labels.append(lbl)
 
-        main_layout.addWidget(left_container, 0)
-        main_layout.addWidget(spacer, 1)
-        main_layout.addWidget(right_container, 0)
-
-        # Keep dark palette applied from main()
-        self.showFullScreen()
+        self.show()
 
     def setup_signals(self):
         self.signals.digits_received.connect(self.update_digits_display)
@@ -127,22 +122,22 @@ class DigitDisplayGUI(QMainWindow):
         
         if prev_rot == 0:  # First measurement
             speed = 0
-            path_increment = 0
+            path_increment_km = 0.00
         else:
             # Calculate rotations difference
             rotations_diff = current_rotations - prev_rot
-            # Calculate path increment in meters
-            path_increment = (rotations_diff * self.CIRCLE_LENGTH) / 100  # Convert cm to meters
+            # Calculate path increment in kilometers
+            # CIRCLE_LENGTH is in cm -> 100000 cm in 1 km
+            path_increment_km = (rotations_diff * self.CIRCLE_LENGTH) / 100000.0
             # Calculate time difference in seconds
             time_diff = current_time - prev_time
-            # Calculate speed in cm/s
-            speed = (path_increment * 100) / time_diff if time_diff > 0 else 0
-            # Convert to km/h
-            speed = (speed * 3.6)  # Convert m/s to km/h
+            # Calculate speed in km/h
+            speed = (path_increment_km / time_diff) * 3600.0 if time_diff > 0 else 0.00
         
-        # Update total path
+        # Update total path in km, keep accuracy to 2 decimal places
         if self.active_timers[column]:
-            self.total_path[column] += path_increment
+            self.total_path[column] = round(self.total_path[column] + path_increment_km, 3)
+            self.total_path[column] = round(self.total_path[column], 3)  # Keep as float with 3 decimal places
         
         # Update previous values
         self.prev_rotations[column] = current_rotations
@@ -181,13 +176,13 @@ class DigitDisplayGUI(QMainWindow):
                 labels = self.left_labels if column == '1' else self.right_labels
                 if len(labels) > 1:
                     labels[1].setText(time_str)
-                    labels[2].setText(f"{self.total_path[column]:.1f}")
+                    labels[2].setText(f"{self.total_path[column]:.2f}")
             elif not self.active_timers[column]:
                 # Show 00:00:00 when timer is not active
                 labels = self.left_labels if column == '1' else self.right_labels
                 if len(labels) > 1:
                     labels[1].setText("00:00:00")
-                    labels[2].setText("0.0")
+                    labels[2].setText("0.00")
 
 
     def format_time(self, total_seconds):
@@ -237,9 +232,6 @@ class DigitDisplayGUI(QMainWindow):
         flash_style = """
             QLabel {
                 color: #ffffff;
-                background: rgba(255,255,255,0.08);
-                border-radius: 8px;
-                padding: 12px;
                 min-width: 10;
                 min-height: 10px;
                 font-weight: bold;
@@ -248,9 +240,6 @@ class DigitDisplayGUI(QMainWindow):
         normal_style = """
             QLabel {
                 color: #ffffff;
-                background: rgba(0,0,0,0.4);
-                border-radius: 8px;
-                padding: 12px;
                 min-width: 10px;
                 min-height: 10px;
                 font-weight: bold;
@@ -366,8 +355,11 @@ def main():
     app.setPalette(dark_palette)
     
     window = DigitDisplayGUI()
-    window.show()
-    
+    window.setScreen(app.screens()[1])  # Set to second monitor if available
+    screen = window.screen()
+
+    window.move(screen.geometry().topLeft())
+    window.showFullScreen()
     print("🎯 GUI Application started!")
     
     sys.exit(app.exec())
